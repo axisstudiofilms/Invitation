@@ -1,0 +1,13 @@
+import assert from 'node:assert/strict';
+import {defaultContent,contentSchema} from '../lib/invitation.ts';
+const base='http://127.0.0.1:5173';
+const headers={'Content-Type':'application/json',Cookie:'__sites_local_auth=1'};
+const data={...defaultContent,heroPosition:78,secondaryPosition:12,hiddenSections:['story','gifts'],story:'Keep this personal story'};
+assert.equal(contentSchema.safeParse({...data,heroPosition:101}).success,false);
+assert.equal(contentSchema.safeParse({...data,hiddenSections:['unknown']}).success,false);
+let response=await fetch(base+'/api/invitations',{method:'POST',headers,body:JSON.stringify(data)});assert.equal(response.status,201);let inv=await response.json();
+response=await fetch(base+'/api/invitations/'+inv.id,{method:'PUT',headers,body:JSON.stringify({data:{...data,template:'minimal'},revision:inv.revision})});assert.equal(response.status,200);
+inv=await (await fetch(base+'/api/invitations/'+inv.id,{headers})).json();assert.equal(inv.data.heroPosition,78);assert.equal(inv.data.secondaryPosition,12);assert.equal(inv.data.story,data.story);assert.deepEqual(inv.data.hiddenSections,data.hiddenSections);
+const slug='flagship-qa-'+Date.now();response=await fetch(base+'/api/invitations/'+inv.id+'/publish',{method:'POST',headers,body:JSON.stringify({slug,revision:inv.revision})});assert.equal(response.status,200);
+const html=await (await fetch(base+'/w/'+slug)).text();assert.ok(!html.includes('class="card-section card-story"'));assert.ok(!html.includes('class="card-section gift-section"'));assert.ok(html.includes('center 78%'));assert.ok(html.includes('id="celebration"'));
+console.log('PASS: template changes preserve story/visibility/crops, invalid settings rejected, hidden sections absent from guest markup, schedule shortcut present.');

@@ -1,0 +1,27 @@
+import assert from 'node:assert/strict';
+import {sampleContent,templates,contentSchema} from '../lib/invitation.ts';
+const base='http://127.0.0.1:5173',auth={Cookie:'__sites_local_auth=1','Content-Type':'application/json'};
+const req=(p,method='GET',data,privateRequest=false)=>fetch(base+p,{method,headers:privateRequest?auth:{'Content-Type':'application/json'},...(data?{body:JSON.stringify(data)}:{})});
+const data=sampleContent(templates.find(t=>t.id==='ivory-nepali'));
+assert.ok(contentSchema.safeParse(data).success);
+assert.ok(!contentSchema.safeParse({...data,timeline:[{name:'Test',time:'29:99'}]}).success);
+let r=await req('/api/invitations','POST',data,true);assert.equal(r.status,201,await r.clone().text());const inv=await r.json(),p='/api/invitations/'+inv.id,slug='ivory-qa-'+Date.now();
+r=await req(p+'/publish','POST',{slug,revision:inv.revision},true);assert.equal(r.status,200,await r.clone().text());
+const w='/api/wishes/'+slug, wish={name:'QA guest',message:'A joyful life together.',consent:true};
+assert.deepEqual(await (await req(w)).json(),[]);
+assert.equal((await req(w,'POST',{...wish,consent:false})).status,400);
+assert.equal((await fetch(base+w,{method:'POST',headers:{'Content-Type':'application/json',Origin:'https://example.invalid'},body:JSON.stringify(wish)})).status,403);
+assert.equal((await req(w,'POST',wish)).status,201);
+assert.deepEqual(await (await req(w)).json(),[],'Pending wishes stay private');
+assert.equal((await req(w,'POST',wish)).status,429,'Duplicate blocked');
+assert.equal((await req(p+'/wishes')).status,404,'Moderation requires owner');
+const pending=await (await req(p+'/wishes','GET',undefined,true)).json();assert.equal(pending.length,1);
+assert.equal((await req(p+'/wishes','POST',{wishId:pending[0].id,action:'approve'},true)).status,200);
+assert.equal((await (await req(w)).json()).length,1,'Approved wish public');
+assert.equal((await req(p+'/wishes','POST',{wishId:pending[0].id,action:'delete'},true)).status,200);
+assert.deepEqual(await (await req(w)).json(),[]);
+r=await req(p,'PUT',{data:{...data,guestbookEnabled:false},revision:(await (await req(p,'GET',undefined,true)).json()).revision},true);assert.equal(r.status,200);const saved=await r.json();
+await req(p+'/publish','POST',{slug,revision:saved.revision},true);
+assert.equal((await req(w)).status,404,'Disabled wishes hidden');
+console.log('PASS: ivory data, timeline validation, publish, consent, origin protection, moderation privacy, approval, duplicate guard, deletion, disabled guestbook.');
+

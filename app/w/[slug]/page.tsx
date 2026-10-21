@@ -1,0 +1,8 @@
+import { database } from '@/lib/server';
+import { defaultContent, type Content } from '@/lib/invitation';
+import { GuestInvitation } from '@/components/invitation-view';
+import { notFound } from 'next/navigation';
+export const dynamic = 'force-dynamic';
+async function load(slug:string):Promise<Content|null>{if(slug==='suman-priya')return defaultContent;const row=await database().prepare('SELECT published_data FROM invitations WHERE slug = ? AND published_data IS NOT NULL').bind(slug).first<{published_data:string}>();return row?JSON.parse(row.published_data):null;}
+export async function generateMetadata({params}:{params:Promise<{slug:string}>}){const {slug}=await params;try{const data=await load(slug);return {title:data?`${data.groom} & ${data.bride} — You’re invited`:'Invitation not found',description:'Celebrate a beautiful new chapter with us.',robots:{index:false,follow:false},openGraph:{title:data?`${data.groom} & ${data.bride}`:'Wedding invitation',description:'You’re invited to celebrate with us.'}};}catch{return {title:'Wedding invitation'};}}
+export default async function Page({params}:{params:Promise<{slug:string}>}){const {slug}=await params;let data:Content|null;try{data=await load(slug);}catch{return <main className="section empty"><h1>Your invitation will be back soon.</h1><p>We’re having trouble loading this celebration. Please try again shortly.</p></main>;}if(!data)notFound();return <>{slug==='suman-priya'&&<div className="preview-banner"><span>SAMPLE INVITATION · Illustrative details</span><a href="/create">Make yours</a></div>}<GuestInvitation data={data}/></>;}

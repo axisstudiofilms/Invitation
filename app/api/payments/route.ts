@@ -1,0 +1,4 @@
+import { identity,failure,protect,database } from '@/lib/server';
+import { paymentAdapters, type Provider } from '@/lib/payments';
+export async function POST(request:Request){return protect(request,async()=>{const u=await identity(request);if(!u)return failure('Please sign in.',401);const {provider,invitationId}=await request.json() as {provider:string;invitationId:string};if(!['esewa','khalti','fonepay','bank'].includes(provider))return failure('Unknown payment provider.');const row=await database().prepare('SELECT id FROM invitations WHERE id = ? AND owner_id = ?').bind(invitationId,u.userId).first();if(!row)return failure('Invitation not found.',404);return Response.json(await paymentAdapters[provider as Provider].createCheckout({invitationId,amountPaisa:0,currency:'NPR',returnUrl:new URL(`/editor/${invitationId}`,request.url).href}));});}
+

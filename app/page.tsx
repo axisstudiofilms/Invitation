@@ -1,0 +1,4 @@
+import {Home} from '@/components/axis-app';
+import {pageMetadata,siteUrl} from '@/lib/seo';
+export const metadata=pageMetadata('Nepali Digital Wedding Invitations','Create a premium wedding invitation in Nepali, English or both. Explore 16 designs, personalize your story and share your wedding website.','/');
+export default function Page(){const schema={'@context':'https://schema.org','@type':'WebApplication',name:'Axis Invitation',url:siteUrl,description:'Digital wedding invitation builder by Axis Studio.',applicationCategory:'LifestyleApplication',operatingSystem:'Web',inLanguage:['ne','en'],provider:{'@type':'Organization',name:'Axis Studio',url:'https://axisfilmstudio.com'}};return <><script type="application/ld+json" dangerouslySetInnerHTML={{__html:JSON.stringify(schema).replace(/</g,'\\u003c')}}/><Home/></>;}

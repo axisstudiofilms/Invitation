@@ -1,0 +1,35 @@
+import assert from 'node:assert/strict';
+import { defaultContent } from '../lib/invitation.ts';
+import QRCode from 'qrcode';
+const base=process.env.AXIS_TEST_URL||'http://127.0.0.1:5173';
+const cookie='__sites_local_auth=1';
+async function request(path,{auth=true,...options}={}){return fetch(base+path,{...options,headers:{...(auth?{Cookie:cookie}:{}),...options.headers}});}
+const body=v=>({headers:{'Content-Type':'application/json'},body:JSON.stringify(v)});
+for(const path of ['/','/templates','/create','/pricing','/dashboard','/help','/w/suman-priya'])assert.equal((await request(path,{auth:false})).status,200,path);
+assert.equal((await request('/api/invitations',{auth:false})).status,401,'Anonymous drafts protected');
+assert.equal((await request('/api/invitations',{auth:false,headers:{'oai-authenticated-user-id':'local_seedy','oai-authenticated-user-email':'seedy@sites.test'}})).status,401,'Forged identity stripped');
+let response=await request('/api/invitations',{method:'POST',...body({...defaultContent,groom:'AxisQA'})});assert.equal(response.status,201,await response.clone().text());let invitation=await response.json();const path='/api/invitations/'+invitation.id;
+const publicSlug='axis-qa-'+Date.now();
+const changed={...invitation.data,bride:'PreviewName',template:'traditional',language:'both'};
+response=await request(path,{method:'PUT',...body({data:changed,revision:invitation.revision})});assert.equal(response.status,200);let saved=await response.json();
+assert.equal((await request(path,{method:'PUT',...body({data:changed,revision:invitation.revision})})).status,409,'Concurrent save rejected');
+assert.equal((await request(path+'/publish',{method:'POST',...body({slug:publicSlug,revision:saved.revision})})).status,200,'Publishing works');
+let loaded=await (await request(path)).json();assert.equal(loaded.data.bride,'PreviewName');assert.equal(loaded.data.template,'traditional');
+assert.ok((await (await request('/w/'+publicSlug,{auth:false})).text()).includes('PreviewName'),'Published invitation loads anonymously');
+const newer={...changed,bride:'UnpublishedName'};
+response=await request(path,{method:'PUT',...body({data:newer,revision:loaded.revision})});assert.equal(response.status,200);saved=await response.json();
+const html=await (await request('/w/'+publicSlug,{auth:false})).text();assert.ok(html.includes('PreviewName'));assert.ok(!html.includes('UnpublishedName'),'Draft changes remain private');
+assert.equal((await request(path,{auth:false})).status,401,'Private invitation protected');
+assert.ok([401,403].includes((await request(path,{method:'PUT',...body({data:newer,revision:saved.revision}),headers:{'Content-Type':'application/json',Origin:'https://attacker.test'}})).status),'Cross-origin writes rejected');
+assert.equal((await request('/api/admin')).status,403,'Admin denied by default');
+response=await request('/api/payments',{method:'POST',...body({provider:'khalti',invitationId:invitation.id})});assert.equal(response.status,200);assert.equal((await response.json()).mode,'test');
+const form=new FormData();form.append('file',new File([Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/aX8AAAAASUVORK5CYII=','base64')],'sample.png',{type:'image/png'}));
+response=await request('/api/uploads',{method:'POST',body:form});assert.equal(response.status,200,await response.clone().text());const media=await response.json();assert.equal((await request(media.url)).status,200);assert.equal((await request(media.url,{auth:false})).status,404,'Draft media protected');
+const forbiddenSecond={...newer,heroSecondary:'/api/media/00000000-0000-0000-0000-000000000000'};
+assert.equal((await request(path,{method:'PUT',...body({data:forbiddenSecond,revision:saved.revision})})).status,403,'Second cover image ownership enforced');
+const mediaDraft={...newer,heroSecondary:media.url};response=await request(path,{method:'PUT',...body({data:mediaDraft,revision:saved.revision})});saved=await response.json();assert.equal(response.status,200);assert.equal((await (await request(path)).json()).data.heroSecondary,media.url,'Second cover image persists');
+assert.equal((await request(media.url,{auth:false})).status,404,'Second cover remains private until published');
+response=await request(path+'/publish',{method:'POST',...body({slug:publicSlug,revision:saved.revision})});assert.equal(response.status,200);assert.equal((await request(media.url,{auth:false})).status,200,'Published media available');
+assert.ok((await QRCode.toDataURL(base+'/w/'+publicSlug)).startsWith('data:image/png;base64,'),'QR generated');
+console.log(JSON.stringify({result:'PASS',checks:['all pages','create/save','template preservation','concurrent saves','publish','anonymous public invitation','draft isolation','republish','identity protection','cross-origin protection','uploads','media visibility','admin protection','payment placeholders','QR generation'],invitationId:invitation.id,slug:publicSlug},null,2));
+
